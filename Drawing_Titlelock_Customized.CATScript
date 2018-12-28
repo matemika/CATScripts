@@ -1,0 +1,537 @@
+'Macro created by Mateusz Mika - you can find me: www.linkedin.com/in/mmika
+'Fill free to use it :-)
+
+'Rules for TB template:
+'- Template has to be a separate view - 2D Component on Detail type SHEET
+'- all of the names should start with sTitleblockPrefix entry defined below
+'- all of the texts which user is going to modify should contain "INPUT" word in the name
+'- there should be no spaces in the texts names; instead of the space minus "-" can be use
+
+'Drawing elements
+'-------------------------------------------------------------------------------------
+Public docActiveDrw As DrawingDocument
+Public shtActive As DrawingSheet
+Public drvWorkingView As DrawingView
+'-------------------------------------------------------------------------------------
+Public Const sTitle As String = "Frame and Titleblock Script"
+'-------------------------------------------------------------------------------------
+'#Define prefix for all title-block elements or use the one below - "B" is capital - case sensitive search
+Public Const sTitleblockPrefix As String = "TitleBlock_"
+'-------------------------------------------------------------------------------------
+Public bStopFill As Boolean
+Public varAllTexts()
+'-------------------------------------------------------------------------------------
+
+Sub CATDrw_Creation()
+    
+    If CATStart = True Then
+        
+        '#Path with drawing name and extension should be here e.g. "C:\CATIA\Drawing\TemplateDrawing.CATDrawing"
+        Dim sPath As String
+        sPath = CATIA.SystemService.Environ("CATTitleBlockPath")
+        '#Define name for drawing with title block template name - this one will be use
+        Dim sTitleblockTemplateName As String
+        sTitleblockTemplateName = "Title-block-Part"
+        
+        'Create title-block
+        AddTitleblockFromTemplate sPath, sTitleblockTemplateName
+        'Create frame
+        CATFrame
+        
+        If bStopFill = False Then
+            FillTitleblock
+        End If
+        
+    End If
+    
+End Sub
+
+Sub CATDrw_Deletion()
+
+    Dim sEntryToDeleteTB As String
+    sEntryToDeleteTB = "..Name=" & sTitleblockPrefix & "*"
+    
+    If CATStart = True Then
+      DeleteAll "..Name=Frame_*"
+      DeleteAll sEntryToDeleteTB '"..Name=TitleBlock_*"
+    End If
+
+End Sub
+Sub CATDrw_Resizing()
+    
+    'Resizing will save provided values, delete frame and titleblock and recreate them and finally overwrite original values with provided
+    If CATStart = True Then
+        StoreAllTexts
+        CATDrw_Deletion
+        
+        bStopFill = True
+            CATDrw_Creation
+        bStopFill = False
+        
+        OverWriteValues
+    End If
+    
+End Sub
+Sub CATDrw_ReFillTitleBlock()
+    
+    'Function will call loop through all of the fields in TB and ask for an entries
+    If CATStart = True Then
+        FillTitleblock
+    End If
+    
+End Sub
+
+Sub DeleteAll(iQuery As String)
+  '-------------------------------------------------------------------------------
+  'Delete all elements  matching the query string iQuery
+  'Pay attention no to provide a localized query string.
+  '-------------------------------------------------------------------------------
+  Dim selActiveDoc As Selection
+  Set selActiveDoc = docActiveDrw.Selection
+  
+  selActiveDoc.Clear
+  selActiveDoc.Add drvWorkingView
+  'MsgBox iQuery
+  selActiveDoc.Search iQuery & ",sel"
+  
+  ' Avoid Delete failure in case of an empty query result
+  If selActiveDoc.Count2 <> 0 Then selActiveDoc.Delete
+  
+End Sub
+'-------------------------------------------------------------------------------------
+Function CATStart() As Boolean
+'Function to activate all of the public drawing elements
+'Background view will be activated
+    
+    CATStart = False
+    
+    If TypeName(CATIA.ActiveDocument) = "DrawingDocument" Then
+        Set docActiveDrw = CATIA.ActiveDocument
+        Set shtActive = docActiveDrw.Sheets.ActiveSheet
+        If shtActive.IsDetail Then
+            MsgBox "Please activate standard sheet and start again." & vbNewLine & "Script will be terminated.", vbExclamation, sTitle
+        Else
+            CATStart = True
+            shtActive.Views.Item(2).Activate
+            Set drvWorkingView = shtActive.Views.ActiveView
+        End If
+    Else
+        MsgBox "Active document does not recognized as a Drawing." & vbNewLine & "Script will be terminated.", vbExclamation, sTitle
+    End If
+    
+End Function
+
+Public Function AddTitleblockFromTemplate(sTemplatePath As String, s2DComponentViewName As String) As Boolean
+    
+    Dim docTemplateDrawing As DrawingDocument
+    Dim drv2DCompToInsert As DrawingView
+    Dim drvTargetView As DrawingView
+    
+    'Read the template drawing
+    CATIA.DisplayFileAlerts = False
+    Set docTemplateDrawing = CATIA.Documents.Read(sTemplatePath)
+    CATIA.DisplayFileAlerts = True
+    
+    'Check if view with provided name exist in the template
+    Dim shtEachSheet As DrawingSheet
+    Dim drvEachView As DrawingView
+    
+    For Each shtEachSheet In docTemplateDrawing.Sheets
+        If shtEachSheet.IsDetail Then '2D Component can be stored only on detail sheet
+            If shtEachSheet.Views.Count > 0 Then
+                For Each drvEachView In shtEachSheet.Views
+                    If UCase(Trim(drvEachView.Name)) = UCase(Trim(s2DComponentViewName)) Then
+                        Set drv2DCompToInsert = drvEachView
+                    End If
+                Next
+            End If
+        End If
+    Next
+    
+    If drv2DCompToInsert Is Nothing Then
+        MsgBox "View does not exist on template drawing!", vbExclamation, sTitle
+    Else
+        
+        ChangeNames drv2DCompToInsert
+        
+        Dim cmpInsertViewFromTemplate As DrawingComponent
+        Set cmpInsertViewFromTemplate = drvWorkingView.Components.Add(drv2DCompToInsert, GetWidth() - GetOffset(), GetOffset()) 'Position TB in the corner of the frame
+        
+        cmpInsertViewFromTemplate.Explode
+        drvWorkingView.Components.Remove cmpInsertViewFromTemplate.Name
+        
+    End If
+    
+    docTemplateDrawing.Close
+    
+End Function
+
+Sub ChangeNames(drvInputView As DrawingView)
+    
+    Dim geoEachElement As GeometricElement
+    If drvInputView.GeometricElements.Count > 0 Then
+        For Each geoEachElement In drvInputView.GeometricElements
+            If InStr(UCase(geoEachElement.Name), UCase(sTitleblockPrefix)) = 0 Then
+                geoEachElement.Name = sTitleblockPrefix & geoEachElement.Name
+            End If
+        Next
+    End If
+    
+    Dim txtEachText As DrawingText
+    If drvInputView.Texts.Count > 0 Then
+        For Each txtEachText In drvInputView.Texts
+            
+            If InStr(UCase(txtEachText.Name), UCase(sTitleblockPrefix)) = 0 Then
+                txtEachText.Name = sTitleblockPrefix & txtEachText.Name
+            End If
+            
+        Next
+    End If
+    
+End Sub
+Sub FillTitleblock()
+'- some of the values can be covered with additional functions without user interaction as sheetnb, scale, size etc. here it is skipped,
+'- only date and projection will be proposed
+    Dim txtEachText As DrawingText
+    Dim sTextName As String
+    Dim sUpperCaseTBPrefix As String
+    sUpperCaseTBPrefix = UCase(Trim(sTitleblockPrefix))
+    For Each txtEachText In drvWorkingView.Texts
+    
+        sTextName = txtEachText.Name
+        sTextName = UCase(Trim(sTextName))
+        
+        If InStr(sTextName, sUpperCaseTBPrefix) <> 0 Then
+            sTextName = Replace(sTextName, sUpperCaseTBPrefix, vbNullString)
+            If InStr(sTextName, "INPUT") <> 0 Then
+                sTextName = Replace(sTextName, "INPUT", vbNullString)
+                
+                sTextName = KeepOnlyLetters(sTextName)
+                
+                If InStr(sTextName, "DATE") Then
+                    txtEachText.Text = InputBox("Provide value for: " & vbNewLine & sTextName, sTitle, CStr(Date))
+                ElseIf InStr(sTextName, "PROJECTION") Then
+                    If shtActive.ProjectionMethod = catFirstAngle Then
+                        txtEachText.Text = InputBox("Provide value for: " & vbNewLine & sTextName, sTitle, "First Angle")
+                    Else
+                        'txtEachText.Text = "Third Angle" '#can be used instead line below - full automization
+                        txtEachText.Text = InputBox("Provide value for: " & vbNewLine & sTextName, sTitle, "Third Angle")
+                    End If
+                Else
+                    txtEachText.Text = InputBox("Provide value for: " & vbNewLine & sTextName, sTitle, txtEachText.Text)
+                End If
+            End If
+        End If
+    Next
+    
+End Sub
+
+Function KeepOnlyLetters(sInput As String) As String
+    
+    Dim iCount As Integer
+    Dim iNextItem As Integer
+    Dim varCharToRemove()
+    Dim sSingleChar As String
+    
+    iNextItem = 0
+    For iCount = 1 To Len(sInput)
+        sSingleChar = Mid(sInput, iCount, 1)
+        If Asc(sSingleChar) < 65 Or Asc(sSingleChar) > 90 Then 'Ascii 65 = A and Ascii 90 = Z - string is already capital
+            ReDim Preserve varCharToRemove(iNextItem)
+            varCharToRemove(iNextItem) = sSingleChar
+            iNextItem = iNextItem + 1
+        End If
+    Next
+    
+    Dim iNbOfChars As Integer
+    If IsEmpty(varCharToRemove) = False Then
+        iNbOfChars = UBound(varCharToRemove, 1)
+        For iCount = 0 To iNbOfChars
+            sInput = Replace(sInput, varCharToRemove(iCount), Chr(32)) 'Chr(32) - space
+        Next
+    End If
+    
+    KeepOnlyLetters = sInput
+    
+End Function
+
+Sub CATFrame()
+  '-------------------------------------------------------------------------------
+  'How to create the Frame
+  '-------------------------------------------------------------------------------
+  Dim Cst_1   As Double  'Length (in cm) between 2 horinzontal marks
+  Dim Cst_2   As Double  'Length (in cm) between 2 vertical marks
+  Dim Nb_CM_H As Integer 'Number/2 of horizontal centring marks
+  Dim Nb_CM_V As Integer 'Number/2 of vertical centring marks
+  Dim Ruler   As Integer 'Ruler length (in cm)
+
+  CATFrameStandard Nb_CM_H, Nb_CM_V, Ruler, Cst_1, Cst_2
+  CATFrameBorder
+  CATFrameCentringMark Nb_CM_H, Nb_CM_V, Ruler, Cst_1, Cst_2
+  CATFrameText Nb_CM_H, Nb_CM_V, Ruler, Cst_1, Cst_2
+  CATFrameRuler Ruler, Cst_1
+End Sub
+
+
+Sub CATFrameStandard(Nb_CM_H As Integer, Nb_CM_V As Integer, Ruler As Integer, Cst_1 As Double, Cst_2 As Double)
+  '-------------------------------------------------------------------------------
+  'How to compute standard values
+  '-------------------------------------------------------------------------------
+  Cst_1 = 74.2 '297, 594, 1189 are multiples of 74.2
+  Cst_2 = 52.5 '210, 420, 841  are multiples of 52.2
+
+  If shtActive.Orientation = catPaperPortrait And _
+     (shtActive.PaperSize = catPaperA0 Or _
+      shtActive.PaperSize = catPaperA2 Or _
+      shtActive.PaperSize = catPaperA4) Or _
+      shtActive.Orientation = catPaperLandscape And _
+     (shtActive.PaperSize = catPaperA1 Or _
+      shtActive.PaperSize = catPaperA3) Then
+    Cst_1 = 52.5
+    Cst_2 = 74.2
+  End If
+
+  Nb_CM_H = CInt(0.5 * GetWidth() / Cst_1)
+  Nb_CM_V = CInt(0.5 * GetHeight() / Cst_2)
+  Ruler = CInt((Nb_CM_H - 1) * Cst_1 / 50) * 100   'here is computed the maximum ruler length
+  If GetRulerLength() < Ruler Then Ruler = GetRulerLength()
+End Sub
+
+Function GetRulerLength() As Double
+  GetRulerLength = 200
+End Function
+
+Function GetWidth() As Double
+  Select Case TypeName(shtActive)
+    Case "DrawingSheet": GetWidth = shtActive.GetPaperWidth
+    Case "Layout2DSheet": GetWidth = shtActive.PaperWidth
+  End Select
+End Function
+
+Sub CATFrameBorder()
+  '-------------------------------------------------------------------------------
+  'How to draw the frame border
+  '-------------------------------------------------------------------------------
+  On Error Resume Next
+    CreateLine GetOV(), GetOV(), GetOH(), GetOV(), "Frame_Border_Bottom"
+    CreateLine GetOH(), GetOV(), GetOH(), GetHeight() - GetOffset(), "Frame_Border_Left"
+    CreateLine GetOH(), GetHeight() - GetOffset(), GetOV(), GetHeight() - GetOffset(), "Frame_Border_Top"
+    CreateLine GetOV(), GetHeight() - GetOffset(), GetOV(), GetOV(), "Frame_Border_Right"
+    If Err.Number <> 0 Then Err.Clear
+  On Error GoTo 0
+End Sub
+Function GetOH() As Double
+  GetOH = GetWidth() - GetOffset()
+End Function
+
+Function GetOV() As Double
+  GetOV = GetOffset()
+End Function
+
+Function GetHeight() As Double
+  Select Case TypeName(shtActive)
+    Case "DrawingSheet": GetHeight = shtActive.GetPaperHeight
+    Case "Layout2DSheet": GetHeight = shtActive.PaperHeight
+  End Select
+End Function
+
+Function GetOffset() As Double
+  If shtActive.PaperSize = catPaperA0 Or shtActive.PaperSize = catPaperA1 Or (shtActive.PaperSize = catPaperUser And (GetWidth() > 594 Or GetHeight() > 594)) Then
+    GetOffset = 20
+  Else
+    GetOffset = 10
+  End If
+End Function
+
+Function CreateLine(iX1 As Double, iY1 As Double, iX2 As Double, iY2 As Double, iName As String) As Curve2D
+  '-------------------------------------------------------------------------------
+  ' Creates a sketcher lines thanks to the current 2D factory set to the global variable Fact
+  ' The created line is reneamed to the given iName
+  ' Start point  and End point are created and renamed iName&"_start", iName&"_end"
+  '-------------------------------------------------------------------------------
+  Dim ptNewPoint As Point2D
+  Dim fact2D As Factory2D
+  Set fact2D = drvWorkingView.Factory2D
+
+  Set CreateLine = fact2D.CreateLine(iX1, iY1, iX2, iY2)
+  CreateLine.Name = iName
+  Set ptNewPoint = CreateLine.StartPoint 'Create the start point
+  ptNewPoint.Name = iName & "_start"
+  Set point = CreateLine.EndPoint 'Create the start point
+  ptNewPoint.Name = iName & "_end"
+  
+End Function
+
+Function CreateText(iCaption As String, iX As Double, iY As Double, iName As String) As DrawingText
+
+  '-------------------------------------------------------------------------------
+  'How to create a text
+  '-------------------------------------------------------------------------------
+  Set CreateText = drvWorkingView.Texts.Add(iCaption, iX, iY)
+  CreateText.Name = iName
+  CreateText.AnchorPosition = catMiddleCenter
+  
+End Function
+
+
+Sub CATFrameCentringMark(Nb_CM_H As Integer, Nb_CM_V As Integer, Ruler As Integer, Cst_1 As Double, Cst_2 As Double)
+  '-------------------------------------------------------------------------------
+  'How to draw the centring marks
+  '-------------------------------------------------------------------------------
+  Dim X As Double
+  Dim Y As Double
+  
+  On Error Resume Next
+    CreateLine 0.5 * GetWidth(), GetHeight() - GetOffset(), 0.5 * GetWidth(), GetHeight(), "Frame_CentringMark_Top"
+    CreateLine 0.5 * GetWidth(), GetOV(), 0.5 * GetWidth(), 0, "Frame_CentringMark_Bottom"
+    CreateLine GetOV(), 0.5 * GetHeight(), 0, 0.5 * GetHeight(), "Frame_CentringMark_Left"
+    CreateLine GetWidth() - GetOffset(), 0.5 * GetHeight(), GetWidth(), 0.5 * GetHeight(), "Frame_CentringMark_Right"
+    For i = Nb_CM_H To Ruler / 2 / Cst_1 Step -1
+      If (i * Cst_1 < 0.5 * GetWidth() - 1) Then
+        X = 0.5 * GetWidth() + i * Cst_1
+        CreateLine X, GetOV(), X, 0.25 * GetOffset(), "Frame_CentringMark_Bottom_" & Int(X)
+        X = 0.5 * GetWidth() - i * Cst_1
+        CreateLine X, GetOV(), X, 0.25 * GetOffset(), "Frame_CentringMark_Bottom_" & Int(X)
+      End If
+    Next
+    For i = 1 To Nb_CM_H
+      If (i * Cst_1 < 0.5 * GetWidth() - 1) Then
+        X = 0.5 * GetWidth() + i * Cst_1
+        CreateLine X, GetHeight() - GetOffset(), X, GetHeight() - 0.25 * GetOffset(), "Frame_CentringMark_Top_" & Int(X)
+        X = 0.5 * GetWidth() - i * Cst_1
+        CreateLine X, GetHeight() - GetOffset(), X, GetHeight() - 0.25 * GetOffset(), "Frame_CentringMark_Top_" & Int(X)
+      End If
+    Next
+
+    For i = 1 To Nb_CM_V
+      If (i * Cst_2 < 0.5 * GetHeight() - 1) Then
+        Y = 0.5 * GetHeight() + i * Cst_2
+        CreateLine GetOV(), Y, 0.25 * GetOffset(), Y, "Frame_CentringMark_Left_" & Int(Y)
+        CreateLine GetOH(), Y, GetWidth() - 0.25 * GetOffset(), Y, "Frame_CentringMark_Right_" & Int(Y)
+        Y = 0.5 * GetHeight() - i * Cst_2
+        CreateLine GetOV(), Y, 0.25 * GetOffset(), Y, "Frame_CentringMark_Left_" & Int(Y)
+        CreateLine GetOH(), Y, GetWidth() - 0.25 * GetOffset(), Y, "Frame_CentringMark_Right_" & Int(Y)
+      End If
+    Next
+    If Err.Number <> 0 Then Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub CATFrameText(Nb_CM_H As Integer, Nb_CM_V As Integer, Ruler As Integer, Cst_1 As Double, Cst_2 As Double)
+  '-------------------------------------------------------------------------------
+  'How to create coordinates
+  '-------------------------------------------------------------------------------
+  Dim t As String
+  
+  On Error Resume Next
+
+    For i = Nb_CM_H To (Ruler / 2 / Cst_1 + 1) Step -1
+      CreateText Chr(65 + Nb_CM_H - i), 0.5 * GetWidth() + (i - 0.5) * Cst_1, 0.5 * GetOffset(), "Frame_Text_Bottom_1_" & Chr(65 + Nb_CM_H - i)
+      CreateText Chr(64 + Nb_CM_H + i), 0.5 * GetWidth() - (i - 0.5) * Cst_1, 0.5 * GetOffset(), "Frame_Text_Bottom_2_" & Chr(65 + Nb_CM_H + i)
+    Next
+  
+    For i = 1 To Nb_CM_H
+      t = Chr(65 + Nb_CM_H - i)
+      CreateText(t, 0.5 * GetWidth() + (i - 0.5) * Cst_1, GetHeight() - 0.5 * GetOffset(), "Frame_Text_Top_1_" & t).Angle = -90
+      t = Chr(64 + Nb_CM_H + i)
+      CreateText(t, 0.5 * GetWidth() - (i - 0.5) * Cst_1, GetHeight() - 0.5 * GetOffset(), "Frame_Text_Top_2_" & t).Angle = -90
+    Next
+
+    For i = 1 To Nb_CM_V
+      t = CStr(Nb_CM_V + i)
+      CreateText t, GetWidth() - 0.5 * GetOffset(), 0.5 * GetHeight() + (i - 0.5) * Cst_2, "Frame_Text_Right_1_" & t
+      CreateText(t, 0.5 * GetOffset(), 0.5 * GetHeight() + (i - 0.5) * Cst_2, "Frame_Text_Left_1_" & t).Angle = -90
+      
+      t = CStr(Nb_CM_V - i + 1)
+      CreateText t, GetWidth() - 0.5 * GetOffset(), 0.5 * GetHeight() - (i - 0.5) * Cst_2, "Frame_Text_Right_1_" & t
+      CreateText(t, 0.5 * GetOffset(), 0.5 * GetHeight() - (i - 0.5) * Cst_2, "Frame_Text_Left_2" & t).Angle = -90
+    Next
+
+    If Err.Number <> 0 Then Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub CATFrameRuler(Ruler As Integer, Cst_1 As Double)
+  '-------------------------------------------------------------------------------
+  'How to create a ruler
+  '-------------------------------------------------------------------------------
+  'Frame_Ruler_Guide -----------------------------------------------
+  'Frame_Ruler_1cm   | | | | | | | | | | | | | | | | | | | | | | | |
+  'Frame_Ruler_5cm   |         |         |         |         |
+  
+  On Error Resume Next
+    CreateLine 0.5 * GetWidth() - Ruler / 2, 0.75 * GetOffset(), 0.5 * GetWidth() + Ruler / 2, 0.75 * GetOffset(), "Frame_Ruler_Guide"
+
+    For i = 1 To Ruler / 100
+      CreateLine 0.5 * GetWidth() - 50 * i, GetOV(), 0.5 * GetWidth() - 50 * i, 0.5 * GetOffset(), "Frame_Ruler_1_" & i
+      CreateLine 0.5 * GetWidth() + 50 * i, GetOV(), 0.5 * GetWidth() + 50 * i, 0.5 * GetOffset(), "Frame_Ruler_2_" & i
+      For j = 1 To 4
+        CreateLine 0.5 * GetWidth() - 50 * i + 10 * j, GetOV(), 0.5 * GetWidth() - 50 * i + 10 * j, 0.75 * GetOffset(), "Frame_Ruler_3" & i & "_" & j
+        CreateLine 0.5 * GetWidth() + 50 * i - 10 * j, GetOV(), 0.5 * GetWidth() + 50 * i - 10 * j, 0.75 * GetOffset(), "Frame_Ruler_4" & i & "_" & j
+      Next
+    Next
+
+    If Err.Number <> 0 Then Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub StoreAllTexts() 'As Variant
+    
+    Dim txtEach As DrawingText
+    Dim iCount As Integer
+    iCount = 0
+    
+    If drvWorkingView.Texts.Count > 0 Then
+        For Each txtEach In drvWorkingView.Texts
+            If InStr(txtEach.Name, sTitleblockPrefix) Then
+                iCount = iCount + 1
+            End If
+        Next
+    End If
+    
+    If iCount > 0 Then
+        ReDim varAllTexts(iCount, 1)
+        iCount = 0
+        For Each txtEach In drvWorkingView.Texts
+            If InStr(txtEach.Name, sTitleblockPrefix) Then
+                varAllTexts(iCount, 0) = txtEach.Name
+                varAllTexts(iCount, 1) = txtEach.Text
+                iCount = iCount + 1
+            End If
+        Next
+        
+    End If
+    
+End Sub
+
+Sub OverWriteValues()
+
+    Dim iNbOfValues As Integer
+    iNbOfValues = UBound(varAllTexts, 1)
+    
+    Dim txtEach As DrawingText
+    Dim sMessage As String
+    Dim sTextName As String
+    
+    If iNbOfValues > 0 Then
+        Dim iCount As Integer
+        For iCount = 0 To iNbOfValues - 1
+            On Error Resume Next
+                sTextName = varAllTexts(iCount, 0)
+                Set txtEach = drvWorkingView.Texts.GetItem(sTextName)
+            On Error GoTo 0
+            If Err.Number = 0 Then
+                txtEach.Text = varAllTexts(iCount, 1)
+            Else
+                sMessage = sMessage & varAllTexts(iCount, 0) & vbNewLine
+            End If
+            
+        Next
+    End If
+    
+    If Len(sMessage) > 0 Then
+        MsgBox "Following texts could not be found:" & vbNewLine & sMessage, vbInformation, sTitle
+    End If
+End Sub
+
+
