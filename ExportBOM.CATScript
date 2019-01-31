@@ -1,0 +1,129 @@
+Option Explicit 'Force all objects to be declared
+
+'This procedure exports selected DrawingTable content to Excel file
+'
+
+Sub CATMain()
+    
+    'Active drawing definition
+    Dim docActiveDrw As DrawingDocument
+    Set docActiveDrw = CATIA.ActiveDocument
+    
+    'Selection definition
+    Dim selDrawingTable As Object 'As Selection
+    Set selDrawingTable = docActiveDrw.Selection
+    selDrawingTable.Clear
+        
+    Dim arrSelFilter(0) As Variant
+    arrSelFilter(0) = "DrawingTable"
+	
+	'----------------------------------------------------------------------------------
+	'Selection of the Drawing Table
+    Dim strReturnStatus As String
+    strReturnStatus = selDrawingTable.SelectElement2(arrSelFilter, "Select Drawing Table", True)
+        
+    If strReturnStatus = "Cancel" Then Exit Sub
+    
+    Dim tblBOMTable As DrawingTable
+    Set tblBOMTable = selDrawingTable.Item(1).Value
+    
+	'----------------------------------------------------------------------------------
+	'Excel object definition
+    Dim oExcel As Object
+    'Get existing Excel object - if Excel is open  - Error handled - if Excel is closed
+	
+    On Error Resume Next
+        Set oExcel = GetObject(, "EXCEL.Application")
+    
+    'If IsObject(oExcel) Then
+	If Err.Number <> 0 Then 'means Excel is closed
+		'Open new Excel session
+        Set oExcel = CreateObject("Excel.Application")
+        oExcel.Visible = True
+    End If
+
+	On Error GoTo 0
+        
+    Dim wrkbExportWorkbook As Workbook
+    Set wrkbExportWorkbook = oExcel.Workbooks.Add
+    
+    Dim wshtExportSheet As Worksheet
+    Set wshtExportSheet = wrkbExportWorkbook.Sheets.Item(1)
+    
+	'----------------------------------------------------------------------------------
+	'Loop through table content and write to excel
+    
+    Dim iNbrOfRows As Integer
+    Dim iNbrOfColumns As Integer
+    
+    Dim txtEachCellText As DrawingText
+    Dim rangeEachCell As Range
+    
+    Dim iRow As Integer
+    Dim iCol As Integer
+    
+    With tblBOMTable
+    
+        iNbrOfRows = .NumberOfRows
+        iNbrOfColumns = .NumberOfColumns
+        
+        '----------------------------------------------------------------------------------
+        'Loop through the table cell by cell
+        
+        Dim lngFirstRow As Long
+        Dim lngFirstColumn As Long
+        Dim lngNbrOfMergedRows As Long
+        Dim lngNbrOfMergedColumns As Long
+        Dim rangeToMerge As Range
+        
+        For iRow = 1 To iNbrOfRows
+            For iCol = 1 To iNbrOfColumns
+            'Check if cells are merged
+            .GetMergeInfos iRow, iCol, lngFirstRow, lngFirstColumn, lngNbrOfMergedRows, lngNbrOfMergedColumns
+                If lngNbrOfMergedRows <> 0 Or lngNbrOfMergedColumns <> 0 Then 'Cell is merged
+                    
+                    With wshtExportSheet
+                        
+                        Set rangeToMerge = .Cells(lngFirstRow, lngFirstColumn)
+                        
+                        Dim rangeLastCellToMerge As Range
+                        Set rangeLastCellToMerge = rangeToMerge.Offset(lngNbrOfMergedRows - 1, lngNbrOfMergedColumns - 1)
+                        
+                        If rangeToMerge.Row = iRow And rangeToMerge.Column = iCol Then
+                        
+                            .Range(rangeToMerge, rangeLastCellToMerge).Merge 'Merge cells in Excel
+                        
+                        End If
+                        
+                    End With
+                    
+                End If
+            Next
+        Next
+        
+        
+        '----------------------------------------------------------------------------------
+        'Export to excel
+        
+        For iRow = 1 To iNbrOfRows
+            For iCol = 1 To iNbrOfColumns
+                            
+                Set txtEachCellText = .GetCellObject(iRow, iCol)
+                Set rangeEachCell = wshtExportSheet.Cells(iRow, iCol)
+                    
+                    rangeEachCell.NumberFormat = "@"
+                    rangeEachCell.Value = txtEachCellText.Text
+                            
+            Next
+        Next
+        
+   End With
+   
+'----------------------------------------------------------------------------------
+
+'Final message
+    MsgBox "Table exported! Go to Excel to check result", vbOKOnly, "Export BOM Table to Excel"
+    oExcel.Visible = True  
+    
+End Sub
+
