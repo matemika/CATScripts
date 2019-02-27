@@ -1,0 +1,69 @@
+'Macro created by Mateusz Mika - you can find me: www.linkedin.com/in/mmika
+'Fill free to use it :-)
+'
+'Script to replace documents linked to specific - selected views
+'As a first step user must select new document
+'
+'IMPORTANT: Use this script only when standard Replace function does not work!
+
+Sub CATMain()
+
+    If CATIA.GetWorkbenchId = "Drw" Then
+    
+        Dim docActiveDrw As Document
+        Set docActiveDrw = CATIA.ActiveDocument
+        
+        Dim drvEachView As DrawingView
+        Dim genLinksEachView As DrawingViewGenerativeLinks
+        
+        Dim InputObjectType(0) As Variant
+        InputObjectType(0) = "DrawingView" 'Drawing Views Selection filter
+        
+        Dim selActiveDoc 'As Selection
+        Set selActiveDoc = docActiveDrw.Selection
+        
+        selActiveDoc.Clear 'Clear CATIA selection before
+          
+        Dim sSelectionResult As String
+        sSelectionResult = selActiveDoc.SelectElement3(InputObjectType, "Select Views to Modify", True, CATMultiSelTriggWhenUserValidatesSelection, True)
+        'sStatus = oSel.SelectElement3(strArray, "Select parts", False, CATMultiSelTriggWhenUserValidatesSelection, False)
+            If sSelectionResult = "Cancel" Then
+                Exit Sub
+            Else
+            
+                Dim docLinkedDoc As Document
+                Dim sNewDocumentPath As String
+                
+                'New document selection
+                sNewDocumentPath = CATIA.FileSelectionBox("Select First File", "*.CAT*", CatFileSelectionModeOpen)
+                                        
+                    If sNewDocumentPath = "" Then
+                         MsgBox "No file selected. Start once again!", vbExclamation, "Replace Drawing View"
+                    Else
+                        For i = 1 To docActiveDrw.Selection.Count
+                            Set drvEachView = docActiveDrw.Selection.Item(i).Value
+                            Set genLinksEachView = drvEachView.GenerativeLinks
+                            Set docLinkedDoc = CATIA.Documents.Read(sNewDocumentPath)
+                            
+                            '-------------------------------------------------------------------------------------
+                            'Links replacement
+                            genLinksEachView.RemoveAllLinks
+                            genLinksEachView.AddLink docLinkedDoc.Product
+                            '-------------------------------------------------------------------------------------
+                        Next
+                        CATIA.StartCommand "Force Update"
+                    End If
+                           
+            End If
+    
+        selActiveDoc.Clear
+    
+    Else
+    
+        MsgBox "Activate Drawing to run the script.", vbExclamation, "Replace Drawing View"
+        Exit Sub
+        
+    End If
+
+End Sub
+

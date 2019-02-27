@@ -1,0 +1,59 @@
+'Script created by Mateusz Mika - you can find me: www.linkedin.com/in/mmika
+'Fill free to use it :-)
+'
+'Script to replace documents linked to all views except main view and background view
+'As a first step user must select new document
+'
+'IMPORTANT: Use this script only when standard Replace function does not work!
+
+
+Sub CATMain()
+
+    If CATIA.GetWorkbenchId = "Drw" Then
+    
+        Dim docActiveDrw As DrawingDocument
+        Set docActiveDrw = CATIA.ActiveDocument
+        
+        Dim shtActiveSheet As DrawingSheet
+        Set shtActiveSheet = docActiveDrw.Sheets.ActiveSheet
+        
+        If shtActiveSheet.IsDetail Then
+            MsgBox "Activate Standard Drawing Sheet to run the script.", vbExclamation, "Replace Drawing View"
+            Exit Sub
+        End If
+        
+        Dim drvEachView As DrawingView
+        Dim genLinksEachView As DrawingViewGenerativeLinks
+        
+        Dim docLinkedDoc As Document
+        Dim sNewDocumentPath As String
+        
+        'New document selection
+        sNewDocumentPath = CATIA.FileSelectionBox("Select First File", "*.CAT*", CatFileSelectionModeOpen)
+                                
+            If sNewDocumentPath = "" Then
+                 MsgBox "No file selected. Start once again!", vbExclamation, "Replace Drawing View"
+            Else
+                For Each drvEachView In shtActiveSheet.Views
+                    If drvEachView.IsGenerative Then
+                        Set genLinksEachView = drvEachView.GenerativeLinks
+                        Set docLinkedDoc = CATIA.Documents.Read(sNewDocumentPath)
+                        
+                        '-------------------------------------------------------------------------------------
+                        'Links replacement
+                        genLinksEachView.RemoveAllLinks
+                        genLinksEachView.AddLink docLinkedDoc.Product
+                        '-------------------------------------------------------------------------------------
+                    End If
+                Next
+                CATIA.StartCommand "Force Update"
+            End If
+            
+    Else
+        MsgBox "Activate Drawing to run the script.", vbExclamation, "Replace Drawing View"
+        Exit Sub
+    End If
+
+End Sub
+
+
